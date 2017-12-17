@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns="http://www.springframework.org/schema/beans"
+        xmlns:file="http://www.springframework.org/schema/integration/file"
+        xmlns:int="http://www.springframework.org/schema/integration"
+        xmlns:context="http://www.springframework.org/schema/context"
+        xmlns:tx="http://www.springframework.org/schema/tx"
+        xmlns:int-jdbc="http://www.springframework.org/schema/integration/jdbc"
+        xmlns:task="http://www.springframework.org/schema/task"
+        xsi:schemaLocation="http://www.springframework.org/schema/beans
+			http://www.springframework.org/schema/beans/spring-beans.xsd
+			http://www.springframework.org/schema/integration
+			http://www.springframework.org/schema/integration/spring-integration.xsd
+			http://www.springframework.org/schema/integration/file
+			http://www.springframework.org/schema/integration/file/spring-integration-file.xsd http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx.xsd http://www.springframework.org/schema/integration/jdbc http://www.springframework.org/schema/integration/jdbc/spring-integration-jdbc.xsd http://www.springframework.org/schema/task http://www.springframework.org/schema/task/spring-task.xsd">
+
+    <context:property-placeholder location="classpath*:application.properties"/>
+    <context:annotation-config/>
+
+
+    <bean id="dataSource" class="org.apache.commons.dbcp.BasicDataSource" destroy-method="close">
+        <property name="url" value="jdbc:mysql://localhost:<port>/schema"/>
+        <property name="driverClassName" value="com.mysql.jdbc.Driver"/>
+        <property name="username" value="user"/>
+        <property name="password" value="password"/>
+        <property name="removeAbandoned" value="true"/>
+        <property name="initialSize" value="20"/>
+        <property name="maxActive" value="30"/>
+    </bean>
+
+
+    <!--<bean id="transactionManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+        <property name="dataSource" ref="dataSource"/>
+    </bean>-->
+
+    <bean id="transactionManager" class="org.springframework.orm.jpa.JpaTransactionManager">
+        <property name="entityManagerFactory" ref="entityManagerFactory"/>
+    </bean>
+
+    <tx:annotation-driven transaction-manager="transactionManager"/>
+
+
+    <bean id="entityManagerFactory" class="org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean">
+        <property name="dataSource" ref="dataSource"/>
+        <property name="packagesToScan" value="com.example.entity"/>
+        <property name="jpaVendorAdapter">
+            <bean class="org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter"/>
+        </property>
+        <property name="persistenceUnitName" value="punit"/>
+        <property name="loadTimeWeaver">
+            <bean class="org.springframework.instrument.classloading.InstrumentationLoadTimeWeaver"/>
+        </property>
+        <property name="jpaProperties">
+            <props>
+                <!--<prop key="hibernate.hbm2ddl.auto">create-drop</prop>-->
+                <prop key="hibernate.dialect">org.hibernate.dialect.MySQL5Dialect</prop>
+            </props>
+        </property>
+    </bean>
+
+    <bean id="metadataStore"
+          class="org.springframework.integration.jdbc.metadata.JdbcMetadataStore">
+        <constructor-arg ref="dataSource"/>
+    </bean>
+
+    <bean id="persistenceExceptionTranslationPostProcessor"
+          class="org.springframework.dao.annotation.PersistenceExceptionTranslationPostProcessor"/>
+
+    <int:poller default="true" fixed-rate="1000"/>
+    <file:inbound-channel-adapter channel="filesIn"
+                                  directory="file:${input.directory}" filter="compositeFilter">
+        <int:poller fixed-rate="1000" task-executor="taskExecutor" max-messages-per-poll="20"/>
+
+
+        <!--
+        When multiple processes are reading from the same directory it can be desirable to lock files to prevent them from being picked up concurrently.
+        https://docs.spring.io/spring-integration/reference/html/files.html
+        -->
+        <!--<file:nio-locker/>-->
+    </file:inbound-channel-adapter>
+
+    <task:executor id="taskExecutor" pool-size="20"/>
+
+    <file:outbound-channel-adapter channel="archiveChannel"
+                                   directory="file:${archive.directory}">
+        <int:poller task-executor="outboundPool" fixed-rate="100"/>
+    </file:outbound-channel-adapter>
+
+
+    <int:channel id="filesIn">
+        <int:queue/>
+    </int:channel>
+
+    <int:channel id="archiveChannel">
+        <int:queue message-store="store"/>
+    </int:channel>
+
+    <int-jdbc:message-store id="store" data-source="dataSource"/>
+
+    <int:service-activator input-channel="filesIn" ref="persistFiles" output-channel="archiveChannel">
+        <int:poller task-executor="taskPersistExecutor" fixed-rate="100"/>
+    </int:service-activator>
+
+    <task:executor id="taskPersistExecutor" pool-size="5"/>
+    <task:executor id="outboundPool" pool-size="5"/>
+
+
+    <bean id="compositeFilter" class="org.springframework.integration.file.filters.CompositeFileListFilter">
+        <constructor-arg>
+            <list>
+<!--
+                <bean class="org.springframework.integration.file.filters.FileSystemPersistentAcceptOnceFileListFilter">
+                    <constructor-arg index="0" ref="metadataStore"/>
+                    <constructor-arg index="1" value="files"/>
+                </bean>
+-->
+            </list>
+        </constructor-arg>
+    </bean>
+
+    <bean id="persistFiles" class="com.example.FileControl"/>
+
+
+</beans>
+

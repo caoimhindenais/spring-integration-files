@@ -68,7 +68,7 @@
 
     <int:poller default="true" fixed-rate="1000"/>
 
-    <!-- Define Channels -->
+    <!-- Define Execution Pools -->
     <task:executor id="taskPersistExecutor" pool-size="5"/>
     <task:executor id="outboundPool" pool-size="5"/>
     <task:executor id="taskExecutor" pool-size="20"/>
@@ -81,22 +81,10 @@
 
     <int-jdbc:message-store id="JDBC Message Store" data-source="dataSource"/>
 
-    <bean id="fileService" class="com.example.FileService"/>
-
     <file:inbound-channel-adapter id="File Inbound Adapter" channel="Files Inbound Channel"
                                   directory="file:${input.directory}" filter="compositeFilter">
         <int:poller fixed-rate="1000" task-executor="taskExecutor" max-messages-per-poll="20"/>
     </file:inbound-channel-adapter>
-
-    <file:outbound-channel-adapter id="File Onbound Adapter" channel="Archive Channel"
-                                   directory="file:${archive.directory}">
-        <int:poller task-executor="outboundPool" fixed-rate="100"/>
-    </file:outbound-channel-adapter>
-
-    <int:service-activator id="Business Logic Service" input-channel="Files Inbound Channel" ref="fileService"
-                           output-channel="Archive Channel">
-        <int:poller task-executor="taskPersistExecutor" fixed-rate="100"/>
-    </int:service-activator>
 
     <bean id="compositeFilter" class="org.springframework.integration.file.filters.CompositeFileListFilter">
         <constructor-arg>
@@ -108,5 +96,19 @@
             </list>
         </constructor-arg>
     </bean>
+
+    <bean id="fileService" class="com.example.FileService"/>
+
+    <int:service-activator id="Business Logic Service" input-channel="Files Inbound Channel" ref="fileService"
+                           output-channel="Archive Channel">
+        <int:poller task-executor="taskPersistExecutor" fixed-rate="100"/>
+    </int:service-activator>
+
+    <file:outbound-channel-adapter id="File Onbound Adapter" channel="Archive Channel"
+                                   directory="file:${archive.directory}">
+        <int:poller task-executor="outboundPool" fixed-rate="100"/>
+    </file:outbound-channel-adapter>
+
+
 </beans>
 

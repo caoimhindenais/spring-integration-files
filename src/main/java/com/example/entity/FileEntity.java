@@ -1,20 +1,17 @@
 package com.example.entity;
 
-import com.sun.javafx.beans.IDProperty;
-
 import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
 import javax.persistence.GenerationType;
 import javax.persistence.Id;
 import java.time.LocalDateTime;
-import java.util.Date;
 
 /**
  * Created by kevin on 15.12.17.
  */
 
 @Entity(name = "files")
-public class File {
+public class FileEntity {
 
     @Id
     @GeneratedValue(strategy= GenerationType.AUTO)

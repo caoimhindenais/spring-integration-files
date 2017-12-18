@@ -18,28 +18,16 @@
     <context:property-placeholder location="classpath*:application.properties"/>
     <context:annotation-config/>
 
-
+    <!-- DataSource setup -->
     <bean id="dataSource" class="org.apache.commons.dbcp.BasicDataSource" destroy-method="close">
-        <property name="url" value="jdbc:mysql://localhost:<port>/schema"/>
+        <property name="url" value="jdbc:mysql://${application.host}:${database.port}/schema"/>
         <property name="driverClassName" value="com.mysql.jdbc.Driver"/>
         <property name="username" value="user"/>
         <property name="password" value="password"/>
         <property name="removeAbandoned" value="true"/>
-        <property name="initialSize" value="20"/>
-        <property name="maxActive" value="30"/>
+        <property name="initialSize" value="5"/>
+        <property name="maxActive" value="10"/>
     </bean>
-
-
-    <!--<bean id="transactionManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
-        <property name="dataSource" ref="dataSource"/>
-    </bean>-->
-
-    <bean id="transactionManager" class="org.springframework.orm.jpa.JpaTransactionManager">
-        <property name="entityManagerFactory" ref="entityManagerFactory"/>
-    </bean>
-
-    <tx:annotation-driven transaction-manager="transactionManager"/>
-
 
     <bean id="entityManagerFactory" class="org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean">
         <property name="dataSource" ref="dataSource"/>
@@ -59,68 +47,66 @@
         </property>
     </bean>
 
-    <bean id="metadataStore"
-          class="org.springframework.integration.jdbc.metadata.JdbcMetadataStore">
-        <constructor-arg ref="dataSource"/>
+    <bean id="transactionManager" class="org.springframework.orm.jpa.JpaTransactionManager">
+        <property name="entityManagerFactory" ref="entityManagerFactory"/>
     </bean>
+
+    <tx:annotation-driven/>
 
     <bean id="persistenceExceptionTranslationPostProcessor"
           class="org.springframework.dao.annotation.PersistenceExceptionTranslationPostProcessor"/>
 
+    <!-- Define Channels and pollers-->
+
+    <int:channel id="Files Inbound Channel">
+        <int:queue/>
+    </int:channel>
+
+    <int:channel id="Archive Channel">
+        <int:queue message-store="JDBC Message Store"/>
+    </int:channel>
+
     <int:poller default="true" fixed-rate="1000"/>
-    <file:inbound-channel-adapter channel="filesIn"
-                                  directory="file:${input.directory}" filter="compositeFilter">
-        <int:poller fixed-rate="1000" task-executor="taskExecutor" max-messages-per-poll="20"/>
 
-
-        <!--
-        When multiple processes are reading from the same directory it can be desirable to lock files to prevent them from being picked up concurrently.
-        https://docs.spring.io/spring-integration/reference/html/files.html
-        -->
-        <!--<file:nio-locker/>-->
-    </file:inbound-channel-adapter>
-
+    <!-- Define Channels -->
+    <task:executor id="taskPersistExecutor" pool-size="5"/>
+    <task:executor id="outboundPool" pool-size="5"/>
     <task:executor id="taskExecutor" pool-size="20"/>
 
-    <file:outbound-channel-adapter channel="archiveChannel"
+    <!-- Stores both for Metadata  -->
+    <bean id="JDBCMetadataStore"
+          class="org.springframework.integration.jdbc.metadata.JdbcMetadataStore">
+        <constructor-arg ref="dataSource"/>
+    </bean>
+
+    <int-jdbc:message-store id="JDBC Message Store" data-source="dataSource"/>
+
+    <bean id="fileService" class="com.example.FileService"/>
+
+    <file:inbound-channel-adapter id="File Inbound Adapter" channel="Files Inbound Channel"
+                                  directory="file:${input.directory}" filter="compositeFilter">
+        <int:poller fixed-rate="1000" task-executor="taskExecutor" max-messages-per-poll="20"/>
+    </file:inbound-channel-adapter>
+
+    <file:outbound-channel-adapter id="File Onbound Adapter" channel="Archive Channel"
                                    directory="file:${archive.directory}">
         <int:poller task-executor="outboundPool" fixed-rate="100"/>
     </file:outbound-channel-adapter>
 
-
-    <int:channel id="filesIn">
-        <int:queue/>
-    </int:channel>
-
-    <int:channel id="archiveChannel">
-        <int:queue message-store="store"/>
-    </int:channel>
-
-    <int-jdbc:message-store id="store" data-source="dataSource"/>
-
-    <int:service-activator input-channel="filesIn" ref="persistFiles" output-channel="archiveChannel">
+    <int:service-activator id="Business Logic Service" input-channel="Files Inbound Channel" ref="fileService"
+                           output-channel="Archive Channel">
         <int:poller task-executor="taskPersistExecutor" fixed-rate="100"/>
     </int:service-activator>
-
-    <task:executor id="taskPersistExecutor" pool-size="5"/>
-    <task:executor id="outboundPool" pool-size="5"/>
-
 
     <bean id="compositeFilter" class="org.springframework.integration.file.filters.CompositeFileListFilter">
         <constructor-arg>
             <list>
-<!--
                 <bean class="org.springframework.integration.file.filters.FileSystemPersistentAcceptOnceFileListFilter">
-                    <constructor-arg index="0" ref="metadataStore"/>
+                    <constructor-arg index="0" ref="JDBCMetadataStore"/>
                     <constructor-arg index="1" value="files"/>
                 </bean>
--->
             </list>
         </constructor-arg>
     </bean>
-
-    <bean id="persistFiles" class="com.example.FileControl"/>
-
-
 </beans>
 

@@ -20,10 +20,10 @@
 
     <!-- DataSource setup -->
     <bean id="dataSource" class="org.apache.commons.dbcp.BasicDataSource" destroy-method="close">
-        <property name="url" value="jdbc:mysql://${application.host}:${database.port}/schema"/>
+        <property name="url" value="jdbc:mysql://${database.host}:${database.port}/schema"/>
         <property name="driverClassName" value="com.mysql.jdbc.Driver"/>
-        <property name="username" value="user"/>
-        <property name="password" value="password"/>
+        <property name="username" value="${database.user}"/>
+        <property name="password" value="${database.password}"/>
         <property name="removeAbandoned" value="true"/>
         <property name="initialSize" value="5"/>
         <property name="maxActive" value="10"/>
@@ -71,7 +71,7 @@
     <!-- Define Execution Pools -->
     <task:executor id="taskPersistExecutor" pool-size="5"/>
     <task:executor id="outboundPool" pool-size="5"/>
-    <task:executor id="taskExecutor" pool-size="20"/>
+    <task:executor id="taskExecutor" pool-size="5"/>
 
     <!-- Stores both for Metadata  -->
     <bean id="JDBCMetadataStore"
@@ -83,7 +83,7 @@
 
     <file:inbound-channel-adapter id="File Inbound Adapter" channel="Files Inbound Channel"
                                   directory="file:${input.directory}" filter="compositeFilter">
-        <int:poller fixed-rate="1000" task-executor="taskExecutor" max-messages-per-poll="20"/>
+        <int:poller fixed-rate="1000" task-executor="taskExecutor" />
     </file:inbound-channel-adapter>
 
     <bean id="compositeFilter" class="org.springframework.integration.file.filters.CompositeFileListFilter">
@@ -108,7 +108,6 @@
                                    directory="file:${archive.directory}">
         <int:poller task-executor="outboundPool" fixed-rate="100"/>
     </file:outbound-channel-adapter>
-
 
 </beans>
 
